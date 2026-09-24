@@ -1500,7 +1500,6 @@ def add_c():
         return redirect(f'/course/{new_id}')
     except Exception as e:
         return f"حدث خطأ: {str(e)}", 400
-
+init_db()
 if __name__ == '__main__':
-    init_db()
     app.run(host='0.0.0.0', port=5000, debug=False, threaded=True)
