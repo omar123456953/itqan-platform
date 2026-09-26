@@ -1,0 +1,39 @@
+<a href="/admin" class="text-[11px] font-black bg-amber-100 text-amber-800 px-3 py-1.5 rounded-full border border-amber-300">لوحة التحكم ⚙️</a>
+            {% endif %}
+            <a href="/" class="flex items-center gap-1 font-black text-2xl text-[#0B4B80] tracking-tighter">
+                <span>ITQAN</span>
+                <span class="text-xs bg-[#4AD7C5] px-1.5 py-0.5 rounded-md border border-slate-900 text-slate-900 font-black">Me</span>
+            </a>
+        </div>
+    </header>
+
+    <main class="flex-grow">
+        {{ content|safe }}
+    </main>
+
+    <!-- زر سماعة الدعم العائم -->
+    <a href="https://wa.me/966593521664" target="_blank" class="fixed bottom-6 left-6 w-12 h-12 bg-[#FACC15] border-2 border-slate-900 rounded-full shadow-[0_4px_0_#0f172a] flex items-center justify-center z-50 hover:scale-105 transition">
+        <svg class="w-6 h-6 text-slate-900" fill="currentColor" viewBox="0 0 24 24"><path d="M12 1c-4.97 0-9 4.03-9 9v7c0 2.21 1.79 4 4 4h1v-7H5v-4c0-3.87 3.13-7 7-7s7 3.13 7 7v4h-3v7h1c2.21 0 4-1.79 4-4v-7c0-4.97-4.03-9-9-9z"/></svg>
+    </a>
+
+    <footer class="bg-white border-t border-slate-100 text-center py-6 text-xs font-bold text-slate-400">
+        منصة إتقان الأكاديمية © 2023 - 2026 - تواصل وواتساب: 966593521664+
+    </footer>
+
+    <script>
+        function toggleMenu() {
+            document.getElementById('sideMenu').classList.toggle('hidden');
+        }
+        window.addEventListener('DOMContentLoaded', () => {
+            setTimeout(() => {
+                const splash = document.getElementById('splash-screen');
+                if (splash) {
+                    splash.style.opacity = '0';
+                    splash.style.transform = 'scale(1.05)';
+                    setTimeout(() => splash.style.display = 'none', 500);
+                }
+            }, 1800);
+        });
+    </script>
+</body>
+</html>
