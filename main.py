@@ -1,7 +1,7 @@
-import sqlite3
 import os
 import time
-from flask import Flask, render_template_string, redirect, url_for, request, session, send_from_directory
+from flask import Flask, render_template, redirect, url_for, request, session, send_from_directory
+from database import get_db, init_db
 
 app = Flask(__name__)
 app.config['SECRET_KEY'] = 'itqan-bravo-fixed-admin-2026'
@@ -11,279 +11,14 @@ ADMIN_USERNAME = "admin"
 ADMIN_PASSWORD = "123"
 
 BASE_DIR = os.getcwd()
-DB_NAME = os.path.join(BASE_DIR, 'itqan.db')
 UPLOAD_FOLDER = os.path.join(BASE_DIR, 'uploads')
-
-if not os.path.exists(UPLOAD_FOLDER):
-    try:
-        os.makedirs(UPLOAD_FOLDER)
-    except:
-        pass
+os.makedirs(UPLOAD_FOLDER, exist_ok=True)
 
 app.config['UPLOAD_FOLDER'] = UPLOAD_FOLDER
 app.config['MAX_CONTENT_LENGTH'] = 500 * 1024 * 1024
 
-def get_db():
-    conn = sqlite3.connect(DB_NAME)
-    conn.row_factory = sqlite3.Row
-    return conn
-
-def init_db():
-    conn = get_db()
-    c = conn.cursor()
-    c.execute('''CREATE TABLE IF NOT EXISTS users (
-        id INTEGER PRIMARY KEY AUTOINCREMENT,
-        name TEXT UNIQUE, is_admin INTEGER DEFAULT 0
-    )''')
-    c.execute('''CREATE TABLE IF NOT EXISTS universities (
-        id INTEGER PRIMARY KEY AUTOINCREMENT,
-        name TEXT, logo TEXT, desc TEXT, logo_img TEXT
-    )''')
-    c.execute('''CREATE TABLE IF NOT EXISTS instructors (
-        id INTEGER PRIMARY KEY AUTOINCREMENT,
-        name TEXT, bio TEXT, avatar_img TEXT, banner_img TEXT, rating REAL DEFAULT 5.0
-    )''')
-    c.execute('''CREATE TABLE IF NOT EXISTS courses (
-        id INTEGER PRIMARY KEY AUTOINCREMENT,
-        uni_id INTEGER, instructor_id INTEGER DEFAULT 1,
-        title TEXT, code TEXT DEFAULT '', desc TEXT, 
-        price REAL, old_price REAL DEFAULT 0,
-        mid_price REAL DEFAULT 0, mid_old_price REAL DEFAULT 0,
-        final_price REAL DEFAULT 0, final_old_price REAL DEFAULT 0,
-        cover_img TEXT, faculty TEXT DEFAULT 'كلية الهندسة', target_audience TEXT DEFAULT 'طلاب وطالبات'
-    )''')
-    c.execute('''CREATE TABLE IF NOT EXISTS lessons (
-        id INTEGER PRIMARY KEY AUTOINCREMENT,
-        course_id INTEGER, title TEXT, video_filename TEXT, pdf_filename TEXT
-    )''')
-    c.execute('''CREATE TABLE IF NOT EXISTS enrollments (
-        id INTEGER PRIMARY KEY AUTOINCREMENT,
-        user_id INTEGER, course_id INTEGER, package_type TEXT DEFAULT 'full',
-        status TEXT DEFAULT 'pending', created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
-        UNIQUE(user_id, course_id)
-    )''')
-    c.execute('''CREATE TABLE IF NOT EXISTS bank_accounts (
-        id INTEGER PRIMARY KEY AUTOINCREMENT,
-        bank_name TEXT, beneficiary TEXT, account_num TEXT, iban TEXT
-    )''')
-    c.execute('''CREATE TABLE IF NOT EXISTS semester_works (
-        id INTEGER PRIMARY KEY AUTOINCREMENT,
-        title TEXT, faculty TEXT, desc TEXT, file_name TEXT, created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
-    )''')
-
-    for alter_sql in [
-        'ALTER TABLE universities ADD COLUMN logo_img TEXT',
-        'ALTER TABLE courses ADD COLUMN code TEXT DEFAULT ""',
-        'ALTER TABLE courses ADD COLUMN instructor_id INTEGER DEFAULT 1',
-        'ALTER TABLE courses ADD COLUMN old_price REAL DEFAULT 0',
-        'ALTER TABLE courses ADD COLUMN mid_price REAL DEFAULT 0',
-        'ALTER TABLE courses ADD COLUMN mid_old_price REAL DEFAULT 0',
-        'ALTER TABLE courses ADD COLUMN final_price REAL DEFAULT 0',
-        'ALTER TABLE courses ADD COLUMN final_old_price REAL DEFAULT 0',
-        'ALTER TABLE courses ADD COLUMN cover_img TEXT',
-        'ALTER TABLE courses ADD COLUMN faculty TEXT DEFAULT "كلية الهندسة"',
-        'ALTER TABLE courses ADD COLUMN target_audience TEXT DEFAULT "طلاب وطالبات"',
-        'ALTER TABLE lessons ADD COLUMN pdf_filename TEXT',
-        'ALTER TABLE lessons ADD COLUMN video_filename TEXT',
-        'ALTER TABLE enrollments ADD COLUMN status TEXT DEFAULT "approved"'
-    ]:
-        try:
-            c.execute(alter_sql)
-        except:
-            pass
-
-    c.execute('SELECT COUNT(*) FROM instructors')
-    if c.fetchone()[0] == 0:
-        c.execute('''INSERT INTO instructors (name, bio, rating) 
-                     VALUES ('أكاديمية إتقان التعليمية', 'نخبة من الأكاديميين والمحاضرين المتخصصين في تبسيط وشرح المقررات الجامعية وتلخيصها ومتابعة الطلاب لتحقيق الامتياز A+.', 5.0)''')
-    else:
-        c.execute('''UPDATE instructors SET name='أكاديمية إتقان التعليمية' WHERE id=1''')
-
-    c.execute('SELECT COUNT(*) FROM bank_accounts')
-    if c.fetchone()[0] == 0:
-        c.execute('''INSERT INTO bank_accounts (bank_name, beneficiary, account_num, iban) 
-                     VALUES ('بنك الجزيرة', 'عدنان محمد سعيد عبدالكريم', '003381468188001', 'SA2160100003381468188001')''')
-
-    c.execute('SELECT COUNT(*) FROM universities')
-    if c.fetchone()[0] == 0:
-        unis = [
-            ("جامعة الملك خالد", "⛰️", "شروحات واختبارات جامعة الملك خالد"),
-            ("جامعة الملك عبدالعزيز", "🏢", "شروحات ومقررات جامعة الملك عبدالعزيز"),
-            ("جامعة أم القرى", "🕋", "شروحات ومقررات جامعة أم القرى"),
-            ("جامعة جدة", "🏛️", "مقررات وملخصات جامعة جدة"),
-            ("جامعة الملك سعود", "👑", "مقررات جامعة الملك سعود")
-        ]
-        for name, logo, desc in unis:
-            c.execute('INSERT INTO universities (name, logo, desc) VALUES (?, ?, ?)', (name, logo, desc))
-            
-    conn.commit()
-    conn.close()
-
-BASE_HTML = """
-<!DOCTYPE html>
-<html lang="ar" dir="rtl">
-<head>
-    <meta charset="UTF-8">
-    <meta name="viewport" content="width=device-width, initial-scale=1.0">
-    <title>إتقان | المنصة التعليمية</title>
-    <script src="https://cdn.tailwindcss.com"></script>
-    <link href="https://fonts.googleapis.com/css2?family=Tajawal:wght@400;500;700;800;900&display=swap" rel="stylesheet">
-    <style>
-        body { font-family: 'Tajawal', sans-serif; background-color: #FFFFFF; }
-        
-        #splash-screen {
-            position: fixed; inset: 0; background: #ffffff; z-index: 99999;
-            display: flex; flex-direction: column; align-items: center; justify-content: center;
-            transition: opacity 0.5s ease, transform 0.5s ease;
-        }
-
-        .draw-path {
-            stroke-dasharray: 1000; stroke-dashoffset: 1000;
-            animation: drawLine 1.6s cubic-bezier(0.65, 0, 0.35, 1) forwards;
-        }
-
-        .draw-path-delay {
-            stroke-dasharray: 600; stroke-dashoffset: 600;
-            animation: drawLine 1.4s cubic-bezier(0.65, 0, 0.35, 1) 0.3s forwards;
-        }
-
-        .fill-fade { opacity: 0; animation: fillFadeIn 0.6s ease 1.1s forwards; }
-        @keyframes drawLine { to { stroke-dashoffset: 0; } }
-        @keyframes fillFadeIn { to { opacity: 1; } }
-
-        .bravo-teal-btn {
-            background-color: #4AD7C5; border: 2px solid #0F172A;
-            box-shadow: 0 4px 0 #0F172A; transition: all 0.1s ease;
-        }
-        .bravo-teal-btn:active { transform: translateY(3px); box-shadow: 0 1px 0 #0F172A; }
-
-        .bravo-yellow-btn {
-            background-color: #F8CD46; border: 2px solid #0F172A;
-            box-shadow: 0 4px 0 #0F172A; transition: all 0.1s ease;
-        }
-        .bravo-yellow-btn:active { transform: translateY(3px); box-shadow: 0 1px 0 #0F172A; }
-
-        .bravo-red-btn {
-            background-color: #E11D48; border: 2px solid #0F172A; box-shadow: 0 4px 0 #0F172A;
-        }
-    </style>
-</head>
-<body class="text-slate-900 min-h-screen flex flex-col justify-between">
-
-    <div id="splash-screen">
-        <div class="relative w-48 h-48 flex items-center justify-center">
-            <svg class="w-full h-full" viewBox="0 0 200 200" fill="none" xmlns="http://www.w3.org/2000/svg">
-                <path class="draw-path" d="M100 25 L160 55 V110 C160 148 100 178 100 178 C100 178 40 148 40 110 V55 Z" stroke="#0B4B80" stroke-width="6" stroke-linecap="round" stroke-linejoin="round"/>
-                <path class="draw-path-delay" d="M100 45 L145 65 L100 85 L55 65 Z" stroke="#4AD7C5" stroke-width="5" stroke-linecap="round" stroke-linejoin="round"/>
-                <ellipse class="draw-path" cx="100" cy="115" rx="55" ry="18" stroke="#F59E0B" stroke-width="4" transform="rotate(-15 100 115)"/>
-                <path class="draw-path-delay" d="M60 140 C80 135 100 145 100 145 C100 145 120 135 140 140" stroke="#0B4B80" stroke-width="5" stroke-linecap="round"/>
-                <text class="fill-fade" x="100" y="195" text-anchor="middle" font-family="'Tajawal', sans-serif" font-size="20" font-weight="900" fill="#0B4B80">إتـقـان</text>
-            </svg>
-        </div>
-    </div>
-
-    <!-- شريط الإعلان العلوي -->
-    <div class="bg-[#FACC15] text-slate-900 text-center py-1.5 px-4 text-xs font-black flex items-center justify-center gap-1.5 shadow-xs">
-        <span>🎉 الوجهة الأولى للطالب الجامعي 📚</span>
-    </div>
-
-    <!-- القائمة الجانبية Drawer -->
-    <div id="sideMenu" class="fixed inset-0 z-50 flex justify-end hidden">
-        <div class="fixed inset-0 bg-slate-900/30 backdrop-blur-xs" onclick="toggleMenu()"></div>
-        <div class="relative w-80 max-w-[85vw] bg-white h-full shadow-2xl z-10 flex flex-col justify-between p-6">
-            <div>
-                <div class="flex justify-between items-center pb-6">
-                    <button onclick="toggleMenu()" class="text-2xl text-slate-500 font-bold hover:text-slate-800">✕</button>
-                    <div class="flex items-center gap-1 font-black text-2xl text-[#0B4B80]">
-                        <span>ITQAN</span>
-                        <span class="text-xs bg-[#4AD7C5] px-1.5 py-0.5 rounded-md border border-slate-900 text-slate-900 font-black">Me</span>
-                    </div>
-                </div>
-
-                <nav class="space-y-4 text-base font-bold text-slate-800">
-                    <a href="/" class="block py-2.5 border-b border-slate-100 hover:text-teal-600 transition">الرئيسية</a>
-                    <a href="/semester-works" class="block py-2.5 border-b border-slate-100 text-teal-700 font-black hover:text-teal-800 transition">الأعمال الفصلية 📝</a>
-                    <a href="/#unis" onclick="toggleMenu()" class="block py-2.5 border-b border-slate-100 hover:text-teal-600 transition">الجامعات</a>
-                    <a href="/#courses" onclick="toggleMenu()" class="block py-2.5 border-b border-slate-100 hover:text-teal-600 transition">المواد التعليمية</a>
-                    <a href="/instructor/1" class="block py-2.5 border-b border-slate-100 hover:text-teal-600 transition">الجهة الشارحة</a>
-                    <a href="https://wa.me/966593521664" target="_blank" class="block py-2.5 border-b border-slate-100 hover:text-teal-600 transition">تواصل مع الدعم 💬</a>
-                    {% if session.get('is_admin') %}
-                        <a href="/admin" class="block py-2.5 border-b border-amber-200 text-amber-700 font-black">لوحة الإدارة ⚙️</a>
-                        <a href="/admin/logout" class="block py-2.5 border-b border-rose-100 text-rose-600 font-black">خروج من الإدارة 🔒</a>
-                    {% else %}
-                        <a href="/admin/login" class="block py-2.5 border-b border-slate-100 text-slate-400 font-bold hover:text-slate-700 transition">دخول الإدارة 🔐</a>
-                    {% endif %}
-                </nav>
-
-                <div class="mt-8">
-                    {% if session.get('user_name') %}
-                        <div class="text-xs text-slate-500 font-bold mb-3">مرحباً: {{ session.get('user_name') }}</div>
-                        <a href="/logout" class="block text-center py-3 rounded-full text-sm font-black bg-rose-50 text-rose-600 border border-rose-200">تسجيل الخروج</a>
-                    {% else %}
-                        <a href="/login" class="bravo-teal-btn block text-center py-3.5 rounded-full text-slate-900 font-black text-sm shadow-md">سجل معنا</a>
-                    {% endif %}
-                </div>
-            </div>
-            
-            <div class="text-center pt-6 border-t border-slate-100 text-xs font-bold text-slate-400">
-                منصة إتقان الأكاديمية © 2023 - 2026
-            </div>
-        </div>
-    </div>
-
-    <!-- الهيدر العلوي -->
-    <header class="bg-white sticky top-0 z-40 border-b border-slate-100 px-4 h-16 flex items-center justify-between">
-        <div class="flex items-center gap-4">
-            <button onclick="toggleMenu()" class="text-2xl text-slate-800 font-bold">
-                <svg class="w-6 h-6" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2.5" d="M4 6h16M4 12h16M4 18h16"></path></svg>
-            </button>
-            <button class="text-xl text-slate-800">
-                <svg class="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2.5" d="M21 21l-6-6m2-5a7 7 0 11-14 0 7 7 0 0114 0z"></path></svg>
-            </button>
-        </div>
-
-        <div class="flex items-center gap-3">
-            {% if session.get('is_admin') %}
-                <a href="/admin" class="text-[11px] font-black bg-amber-100 text-amber-800 px-3 py-1.5 rounded-full border border-amber-300">لوحة التحكم ⚙️</a>
-            {% endif %}
-            <a href="/" class="flex items-center gap-1 font-black text-2xl text-[#0B4B80] tracking-tighter">
-                <span>ITQAN</span>
-                <span class="text-xs bg-[#4AD7C5] px-1.5 py-0.5 rounded-md border border-slate-900 text-slate-900 font-black">Me</span>
-            </a>
-        </div>
-    </header>
-
-    <main class="flex-grow">
-        {{ content|safe }}
-    </main>
-
-    <!-- زر سماعة الدعم العائم -->
-    <a href="https://wa.me/966593521664" target="_blank" class="fixed bottom-6 left-6 w-12 h-12 bg-[#FACC15] border-2 border-slate-900 rounded-full shadow-[0_4px_0_#0f172a] flex items-center justify-center z-50 hover:scale-105 transition">
-        <svg class="w-6 h-6 text-slate-900" fill="currentColor" viewBox="0 0 24 24"><path d="M12 1c-4.97 0-9 4.03-9 9v7c0 2.21 1.79 4 4 4h1v-7H5v-4c0-3.87 3.13-7 7-7s7 3.13 7 7v4h-3v7h1c2.21 0 4-1.79 4-4v-7c0-4.97-4.03-9-9-9z"/></svg>
-    </a>
-
-    <footer class="bg-white border-t border-slate-100 text-center py-6 text-xs font-bold text-slate-400">
-        منصة إتقان الأكاديمية © 2023 - 2026 - تواصل وواتساب: 966593521664+
-    </footer>
-
-    <script>
-        function toggleMenu() {
-            document.getElementById('sideMenu').classList.toggle('hidden');
-        }
-        window.addEventListener('DOMContentLoaded', () => {
-            setTimeout(() => {
-                const splash = document.getElementById('splash-screen');
-                if (splash) {
-                    splash.style.opacity = '0';
-                    splash.style.transform = 'scale(1.05)';
-                    setTimeout(() => splash.style.display = 'none', 500);
-                }
-            }, 1800);
-        });
-    </script>
-</body>
-</html>
-"""
+# تهيئة قاعدة البيانات تلقائياً
+init_db()
 
 @app.route('/uploads/<filename>')
 def uploaded_file(filename):
@@ -306,16 +41,10 @@ def home():
         logo_img = u['logo_img'] if 'logo_img' in u.keys() else None
         logo_html = f'<img src="/uploads/{logo_img}" class="w-14 h-14 object-contain">' if logo_img else f'<span class="text-3xl">{u["logo"] or "🏛️"}</span>'
         
-        if idx % 2 == 1:
-            card_bg = "bg-[#1E293B] text-white"
-            text_title = "text-white"
-            text_sub = "text-slate-300"
-            badge_bg = "bg-white text-slate-900"
-        else:
-            card_bg = "bg-[#F4F6F8] text-slate-900"
-            text_title = "text-slate-900"
-            text_sub = "text-slate-500"
-            badge_bg = "bg-white text-slate-900"
+        card_bg = "bg-[#1E293B] text-white" if idx % 2 == 1 else "bg-[#F4F6F8] text-slate-900"
+        text_title = "text-white" if idx % 2 == 1 else "text-slate-900"
+        text_sub = "text-slate-300" if idx % 2 == 1 else "text-slate-500"
+        badge_bg = "bg-white text-slate-900"
 
         uni_cards.append(f'''
         <a href="/uni/{u['id']}" class="relative block {card_bg} rounded-[36px] pt-12 pb-6 px-6 text-center shadow-md transition hover:scale-[1.01]">
@@ -373,7 +102,6 @@ def home():
 
     content = f'''
     <div class="max-w-md mx-auto px-4 py-8 space-y-6">
-        
         <div class="text-center">
             <span class="inline-block bg-amber-50 text-amber-900 text-xs font-bold px-4 py-1.5 rounded-full border border-amber-200 mb-4">
                 تأسست لخدمتكم منذ 2023 🏆
@@ -405,10 +133,9 @@ def home():
             <h2 class="text-lg font-black text-slate-900 mb-2">أبرز المقررات والملخصات</h2>
             {''.join(course_cards) if course_cards else '<p class="text-center text-xs text-slate-400 py-8">لا توجد مواد مضافة بعد</p>'}
         </div>
-
     </div>
     '''
-    return render_template_string(BASE_HTML, content=content)
+    return render_template('base.html', content=content)
 
 @app.route('/semester-works')
 def semester_works():
@@ -445,7 +172,7 @@ def semester_works():
         </div>
     </div>
     '''
-    return render_template_string(BASE_HTML, content=content)
+    return render_template('base.html', content=content)
 
 @app.route('/uni/<int:uni_id>')
 def uni_detail(uni_id):
@@ -454,10 +181,7 @@ def uni_detail(uni_id):
     courses = conn.execute('SELECT * FROM courses WHERE uni_id=?', (uni_id,)).fetchall()
     cards = []
     for c in courses:
-        if c['cover_img']:
-            cover_tag = f'<img src="/uploads/{c["cover_img"]}" class="w-full h-44 object-cover rounded-2xl mb-3">'
-        else:
-            cover_tag = '<div class="w-full h-44 bg-gradient-to-b from-[#38bdf8] to-[#60a5fa] rounded-2xl flex items-center justify-center text-3xl mb-3">🎯</div>'
+        cover_tag = f'<img src="/uploads/{c["cover_img"]}" class="w-full h-44 object-cover rounded-2xl mb-3">' if c['cover_img'] else '<div class="w-full h-44 bg-gradient-to-b from-[#38bdf8] to-[#60a5fa] rounded-2xl flex items-center justify-center text-3xl mb-3">🎯</div>'
         cards.append(f'''
         <div class="bg-white p-4 rounded-3xl border border-slate-100 shadow-sm flex flex-col justify-between">
             <div>
@@ -490,7 +214,7 @@ def uni_detail(uni_id):
         </div>
     </div>
     '''
-    return render_template_string(BASE_HTML, content=content)
+    return render_template('base.html', content=content)
 
 @app.route('/course/<int:course_id>')
 def course_detail(course_id):
@@ -519,22 +243,8 @@ def course_detail(course_id):
         has_video = ('video_filename' in l.keys() and l['video_filename'])
         has_pdf = ('pdf_filename' in l.keys() and l['pdf_filename'])
 
-        if has_video:
-            if can_access:
-                btn_video = f'<a href="/watch/{l["id"]}" class="bravo-teal-btn text-[11px] font-black px-3.5 py-1.5 rounded-full text-slate-900">الشرح ▶</a>'
-            else:
-                btn_video = '<span class="text-[11px] text-slate-400 font-bold bg-slate-100 px-2.5 py-1.5 rounded-full border border-slate-200">🔒 مقفل</span>'
-        else:
-            btn_video = ''
-
-        if has_pdf:
-            if can_access:
-                btn_pdf = f'<a href="/uploads/{l["pdf_filename"]}" target="_blank" class="bg-blue-50 text-blue-700 border border-blue-200 text-[11px] font-black px-3 py-1.5 rounded-full hover:bg-blue-100">الملخص 📄</a>'
-            else:
-                btn_pdf = '<span class="text-[11px] text-slate-400 font-bold bg-slate-100 px-2.5 py-1.5 rounded-full border border-slate-200">🔒 ملخص</span>'
-        else:
-            btn_pdf = ''
-
+        btn_video = f'<a href="/watch/{l["id"]}" class="bravo-teal-btn text-[11px] font-black px-3.5 py-1.5 rounded-full text-slate-900">الشرح ▶</a>' if (has_video and can_access) else ('<span class="text-[11px] text-slate-400 font-bold bg-slate-100 px-2.5 py-1.5 rounded-full border border-slate-200">🔒 مقفل</span>' if has_video else '')
+        btn_pdf = f'<a href="/uploads/{l["pdf_filename"]}" target="_blank" class="bg-blue-50 text-blue-700 border border-blue-200 text-[11px] font-black px-3 py-1.5 rounded-full hover:bg-blue-100">الملخص 📄</a>' if (has_pdf and can_access) else ('<span class="text-[11px] text-slate-400 font-bold bg-slate-100 px-2.5 py-1.5 rounded-full border border-slate-200">🔒 ملخص</span>' if has_pdf else '')
         preview_badge = '<span class="text-[10px] bg-emerald-100 text-emerald-800 px-2 py-0.5 rounded-md font-black mr-2">تجريبي مجاناً</span>' if is_first_lesson else ''
 
         lesson_items.append(f'''
@@ -552,10 +262,7 @@ def course_detail(course_id):
 
     conn.close()
 
-    if c['cover_img']:
-        cover_tag = f'<img src="/uploads/{c["cover_img"]}" class="w-full h-56 object-cover rounded-[32px]">'
-    else:
-        cover_tag = '<div class="w-full h-56 bg-gradient-to-b from-[#38bdf8] to-[#60a5fa] rounded-[32px] flex items-center justify-center text-5xl">🎯</div>'
+    cover_tag = f'<img src="/uploads/{c["cover_img"]}" class="w-full h-56 object-cover rounded-[32px]">' if c['cover_img'] else '<div class="w-full h-56 bg-gradient-to-b from-[#38bdf8] to-[#60a5fa] rounded-[32px] flex items-center justify-center text-5xl">🎯</div>'
 
     code_val = c['code'] if 'code' in c.keys() else ''
     faculty_val = c['faculty'] if 'faculty' in c.keys() else 'كلية الهندسة'
@@ -605,7 +312,6 @@ def course_detail(course_id):
 
     content = f'''
     <div class="max-w-md mx-auto px-4 py-4 pb-28">
-        
         <div class="flex items-center gap-1.5 text-[11px] font-bold text-slate-400 mb-3">
             <a href="/" class="hover:underline">الرئيسية</a>
             <span>&rsaquo;</span>
@@ -696,7 +402,6 @@ def course_detail(course_id):
                 <span class="text-xs text-slate-400 font-bold block mb-4">تقييم الطلاب المعتمد</span>
             </div>
         </div>
-
     </div>
 
     <div id="package-modal" class="fixed inset-0 z-50 flex items-end justify-center hidden">
@@ -736,7 +441,7 @@ def course_detail(course_id):
         </div>
     </div>
     ''' + course_js
-    return render_template_string(BASE_HTML, content=content)
+    return render_template('base.html', content=content)
 
 @app.route('/instructor/<int:inst_id>')
 def instructor_detail(inst_id):
@@ -799,7 +504,7 @@ def instructor_detail(inst_id):
         </div>
     </div>
     '''
-    return render_template_string(BASE_HTML, content=content)
+    return render_template('base.html', content=content)
 
 @app.route('/admin/add-lesson-direct/<int:course_id>', methods=['GET', 'POST'])
 def add_lesson_direct(course_id):
@@ -865,7 +570,7 @@ def add_lesson_direct(course_id):
         </div>
     </div>
     '''
-    return render_template_string(BASE_HTML, content=content)
+    return render_template('base.html', content=content)
 
 @app.route('/checkout/<int:course_id>')
 def checkout(course_id):
@@ -907,7 +612,7 @@ def checkout(course_id):
         </div>
     </div>
     '''
-    return render_template_string(BASE_HTML, content=content)
+    return render_template('base.html', content=content)
 
 @app.route('/buy/<int:course_id>', methods=['POST'])
 def buy(course_id):
@@ -943,7 +648,7 @@ def login():
             session['user_name'] = name
             session['is_admin'] = is_admin
             return redirect('/')
-    return render_template_string(BASE_HTML, content='''
+    return render_template('base.html', content='''
     <div class="max-w-sm mx-auto px-4 py-16">
         <div class="bg-white p-6 rounded-[32px] border border-slate-100 shadow-xl text-center">
             <div class="w-14 h-14 bg-white border-2 border-slate-100 rounded-2xl flex items-center justify-center mx-auto mb-3 shadow-sm p-1">
@@ -1006,7 +711,7 @@ def admin_login():
             <a href="/" class="block text-center text-xs text-slate-400 mt-4 hover:underline">العودة للرئيسية</a>
         </div>
     </div>'''
-    return render_template_string(BASE_HTML, content=content)
+    return render_template('base.html', content=content)
 
 @app.route('/admin/logout')
 def admin_logout():
@@ -1043,13 +748,7 @@ def admin():
             WHERE e.status='approved'
         ''').fetchall()
 
-        total_revenue = 0
-        for row in active_enr:
-            try:
-                total_revenue += float(row['price'] or 0)
-            except:
-                pass
-
+        total_revenue = sum([float(row['price'] or 0) for row in active_enr if row['price']])
         total_students = len(conn.execute('SELECT DISTINCT user_id FROM enrollments WHERE status="approved"').fetchall())
 
         opts = "".join(['<option value="' + str(u['id']) + '">' + u['name'] + '</option>' for u in unis])
@@ -1170,7 +869,6 @@ def admin():
                 </div>
             </div>
 
-            <!-- إضافة وإدارة الحسابات والبطاقات البنكية -->
             <div class="bg-white p-6 rounded-[32px] border border-slate-100 shadow-sm">
                 <h3 class="font-black text-sm text-emerald-800 mb-3">💳 إضافة حساب أو بطاقة بنكية للتحويل</h3>
                 <form action="/admin/add-bank" method="POST" class="space-y-3 text-xs mb-4">
@@ -1185,7 +883,6 @@ def admin():
                 </div>
             </div>
 
-            <!-- خانة نشر وإدارة الأعمال الفصلية -->
             <div class="bg-white p-6 rounded-[32px] border border-slate-100 shadow-sm">
                 <h3 class="font-black text-sm text-teal-800 mb-3">📝 نشر عمل فصلي / تكليف جديد</h3>
                 <form action="/admin/add-work" method="POST" enctype="multipart/form-data" class="space-y-3 text-xs mb-4">
@@ -1204,7 +901,6 @@ def admin():
                 </div>
             </div>
 
-            <!-- إدارة وحذف المواد المضافة -->
             <div class="bg-white p-6 rounded-[32px] border border-slate-100 shadow-sm">
                 <h3 class="font-black text-sm text-slate-800 mb-3">📚 المواد المضافة حالياً ({len(courses)})</h3>
                 <div class="space-y-2 max-h-60 overflow-y-auto">
@@ -1212,7 +908,6 @@ def admin():
                 </div>
             </div>
 
-            <!-- إضافة مادة جديدة -->
             <div class="bg-white p-6 rounded-[32px] border border-slate-100 shadow-sm">
                 <h3 class="font-black text-sm text-slate-800 mb-3">➕ إضافة مقرر جديد</h3>
                 <form action="/admin/add-course" method="POST" enctype="multipart/form-data" class="space-y-3 text-xs">
@@ -1234,7 +929,6 @@ def admin():
                 </form>
             </div>
 
-            <!-- رفع درس وملخص -->
             <div class="bg-white p-6 rounded-[32px] border border-slate-100 shadow-sm">
                 <h3 class="font-black text-sm text-teal-800 mb-3">🎬 رفع درس (فيديو + ملخص PDF معاً)</h3>
                 <form action="/admin/add-unified-lesson" method="POST" enctype="multipart/form-data" class="space-y-3 text-xs">
@@ -1254,7 +948,6 @@ def admin():
                 </form>
             </div>
 
-            <!-- إدارة وحذف الجامعات -->
             <div class="bg-white p-6 rounded-[32px] border border-slate-100 shadow-sm">
                 <h3 class="font-black text-sm text-emerald-800 mb-3">🏛️ إدارة وحذف الجامعات</h3>
                 <div class="space-y-2">
@@ -1262,7 +955,6 @@ def admin():
                 </div>
             </div>
 
-            <!-- إدارة وحذف المحاضرات -->
             <div class="bg-white p-6 rounded-[32px] border border-slate-100 shadow-sm">
                 <h3 class="font-black text-sm text-slate-800 mb-3">🛠️ إدارة وحذف المحاضرات</h3>
                 <div class="space-y-2 max-h-60 overflow-y-auto">
@@ -1271,7 +963,7 @@ def admin():
             </div>
         </div>
         '''
-        return render_template_string(BASE_HTML, content=content)
+        return render_template('base.html', content=content)
     except Exception as e:
         return f"<div style='font-family:sans-serif; direction:rtl; padding:20px; color:#b91c1c;'><h2>حدث خطأ أثناء تحميل لوحة الإدارة:</h2><p>{str(e)}</p></div>", 500
 
@@ -1308,7 +1000,7 @@ def delete_work(work_id):
         if os.path.exists(fpath):
             try:
                 os.remove(fpath)
-            except:
+            except Exception:
                 pass
     conn.execute('DELETE FROM semester_works WHERE id=?', (work_id,))
     conn.commit()
@@ -1398,7 +1090,7 @@ def delete_course(course_id):
                 if os.path.exists(fpath):
                     try:
                         os.remove(fpath)
-                    except:
+                    except Exception:
                         pass
     conn.execute("DELETE FROM lessons WHERE course_id=?", (course_id,))
     conn.execute("DELETE FROM courses WHERE id=?", (course_id,))
@@ -1463,7 +1155,7 @@ def delete_lesson(lesson_id):
                 if os.path.exists(fpath):
                     try:
                         os.remove(fpath)
-                    except:
+                    except Exception:
                         pass
     conn.execute("DELETE FROM lessons WHERE id=?", (lesson_id,))
     conn.commit()
@@ -1500,6 +1192,6 @@ def add_c():
         return redirect(f'/course/{new_id}')
     except Exception as e:
         return f"حدث خطأ: {str(e)}", 400
-init_db()
+
 if __name__ == '__main__':
     app.run(host='0.0.0.0', port=5000, debug=False, threaded=True)
