@@ -3,7 +3,7 @@ from flask import Flask, render_template, request, redirect, url_for, session, a
 from werkzeug.security import check_password_hash
 import database
 
-app = Flask(name)
+app = Flask(_name_)
 
 # مفتاح سري عشوائي مشفر يُقرأ من البيئة أو يُولد تلقائياً
 app.secret_key = os.environ.get('SECRET_KEY', 'itqan-fallback-secret-key-prod-2026')
