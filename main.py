@@ -73,5 +73,5 @@ def admin_logout():
     session.clear()
     return redirect(url_for('home'))
 
-if name == 'main':
+if __name__ == '__main__':
     app.run(debug=False)
